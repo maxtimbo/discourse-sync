@@ -1,0 +1,11 @@
+{
+	"id": "discourse-sync",
+	"name": "Sync to Discourse",
+	"version": "1.0.0",
+	"minAppVersion": "0.15.0",
+	"description": "Sync notes to a Discourse server.",
+	"author": "Tim Finley",
+	"authorUrl": "https://finley-group.com",
+	"fundingUrl": "https://finley-group.com",
+	"isDesktopOnly": true
+}
