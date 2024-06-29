@@ -20,6 +20,7 @@ export default class DiscourseSyncPlugin extends Plugin {
 				this.openCategoryModal();
 			},
 		});
+
 	}
 
 	async loadSettings() {
@@ -72,15 +73,19 @@ export default class DiscourseSyncPlugin extends Plugin {
 							console.log(`Upload Image jsonResponse: ${JSON.stringify(jsonResponse)}`);
 							imageUrls.push(jsonResponse.url);
 						} else {
+							new NotifyUser(this.app, `Error uploading image: ${response.status}`);
 							console.error("Error uploading image:", response.status, await response.text());
 						}
 					} catch (error) {
+						new NotifyUser(this.app, `Exception while uploading image: ${error}`);
 						console.error("Exception while uploading image:", error);
 					}
 				} else {
+					new NotifyUser(this.app, `File not found in vault: ${ref}`);
 					console.error(`File not found in vault: ${ref}`);
 				}
 			} else {
+				new NotifyUser(this.app, `Unable to resolve file path for: ${ref}`);
 				console.error(`Unable to resolve file path for: ${ref}`);
 			}
 		}
@@ -123,6 +128,7 @@ export default class DiscourseSyncPlugin extends Plugin {
 			console.error("Error publishing to Discourse:", response.status);
 			console.error("Response body:", response.text);
 			if (response.status == 422) {
+				new NotifyUser(this.app, `There's an error with this post, could be a duplicate or the title is too short: ${response.status}`);
 				console.error("there's an error with this post, try making a longer title");
 			}
 			return { message: "Error publishing to Discourse" };
@@ -192,12 +198,35 @@ export default class DiscourseSyncPlugin extends Plugin {
 		}
 	}
 
-
 	private async syncToDiscourse() {
 		await this.openCategoryModal();
 	}
 
 	onunload() {}
+
+}
+
+export class NotifyUser extends Modal {
+	message: string;
+	constructor(app: App, message: string) {
+		super(app);
+		this.message = message;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.createEl("h1", { text: 'An error has occurred.' });
+		contentEl.createEl("h4", { text: this.message });
+		const okButton = contentEl.createEl('button', { text: 'Ok' });
+		okButton.onclick = () => {
+			this.close();
+		}
+	}
+
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
+	}
 
 }
 
