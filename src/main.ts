@@ -51,41 +51,67 @@ export default class DiscourseSyncPlugin extends Plugin {
 				if (file) {
 					try {
 						const arrayBuffer = await this.app.vault.readBinary(file);
-						const formData = new FormData();
-						formData.append("file", new Blob([arrayBuffer]), file.name);
-						formData.append("type", "composer");
+						const blob = new Blob([arrayBuffer]);
+						const boundary = '----WebKitFormBoundary7MA4YWxkTrZu0gW';
+						let body = '';
+
+						body += `--${boundary}\r\n`;
+						body += `Content-Disposition: form-data; name="type"\r\n\r\n`;
+						body += "composer\r\n";
+						body += `--${boundary}\r\n`;
+						body += `Content-Disposition: form-data; name="synchronous"\r\n\r\n`;
+						body += "true\r\n";
+
+						body += `--${boundary}\r\n`;
+						body += `Content-Disposition: form-data; name="files[]"; filename="${file.name}"\r\n`;
+						body += `Content-Type: image/jpg\r\n\r\n`
+						body += blob + '\r\n';
+						body += `--${boundary}--\r\n`;
+						console.log(body)
+						const formData = new TextEncoder().encode(body)
 
 						const url = `${this.settings.baseUrl}/uploads.json`;
 						const headers = {
 							"Api-Key": this.settings.apiKey,
 							"Api-Username": this.settings.disUser,
+							"Content-Type": `multipart/form-data; boundary=${boundary}`
 						};
 
-						const response = await fetch(url, {
+						const response = await requestUrl({
+							url: url,
 							method: "POST",
 							body: formData,
-							headers: new Headers(headers),
+							throw: false,
+							headers: headers,
 						});
 
+						//const response = await fetch(url, {
+						//	method: "POST",
+						//	body: formData,
+						//	headers: new Headers(headers),
+						//});
+
 						console.log(`Upload Image response: ${response.status}`);
-						if (response.ok) {
+						//if (response.ok) {
+						if (response.status == 200) {
 							const jsonResponse = response.json();
 							console.log(`Upload Image jsonResponse: ${JSON.stringify(jsonResponse)}`);
 							imageUrls.push(jsonResponse.url);
 						} else {
-							new NotifyUser(this.app, `Error uploading image: ${response.status}`);
-							console.error("Error uploading image:", response.status, await response.text());
+							new NotifyUser(this.app, `Error uploading image: ${response.status}`).open();
+							console.error(`Error uploading image: ${JSON.stringify(response.json)}`);
+							//console.error("Error uploading image:", response.status, await response.text());
 						}
 					} catch (error) {
-						new NotifyUser(this.app, `Exception while uploading image: ${error}`);
+						new NotifyUser(this.app, `Exception while uploading image: ${error}`).open();
 						console.error("Exception while uploading image:", error);
 					}
 				} else {
-					new NotifyUser(this.app, `File not found in vault: ${ref}`);
+					new NotifyUser(this.app, `File not found in vault: ${ref}`).open();
 					console.error(`File not found in vault: ${ref}`);
 				}
 			} else {
-				new NotifyUser(this.app, `Unable to resolve file path for: ${ref}`);
+				new NotifyUser(this.app, `Unable to resolve file path for: ${ref}`).open();
 				console.error(`Unable to resolve file path for: ${ref}`);
 			}
 		}
@@ -128,7 +154,8 @@ export default class DiscourseSyncPlugin extends Plugin {
 			console.error("Error publishing to Discourse:", response.status);
 			console.error("Response body:", response.text);
 			if (response.status == 422) {
-				new NotifyUser(this.app, `There's an error with this post, could be a duplicate or the title is too short: ${response.status}`);
+				new NotifyUser(this.app, `There's an error with this post, could be a duplicate or the title is too short: ${response.status}`).open();
+
 				console.error("there's an error with this post, try making a longer title");
 			}
 			return { message: "Error publishing to Discourse" };
@@ -228,6 +255,20 @@ export class NotifyUser extends Modal {
 		contentEl.empty();
 	}
 
+}
+
+export function buildMultipartFormData(file) {
+	const boundary = '----WebKitFormBoundary7MA4YWxkTrZu0gW';
+	let body = '';
+	body += `--${boundary}\r\n`;
+	body += `Content-Disposition: form-data; name="type";r\n\r\n`;
+	body += `"composer"\r\n`;
+
+	body += `--${boundary}\r\n`;
+	body += `Content-Disposition: form-data; name="file"; filename="${file.name}"\r\n`;
+	body += file.content + '\r\n';
+	body += `--${boundary}--\r\n`;
+	return { body: new TextEncoder().encode(body), boundary };
 }
 
 export class SelectCategoryModal extends Modal {
