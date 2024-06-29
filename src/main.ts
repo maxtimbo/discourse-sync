@@ -63,7 +63,7 @@ export default class DiscourseSyncPlugin extends Plugin {
 						const response = await fetch(url, {
 							method: "POST",
 							body: formData,
-							headers,
+							headers: new Headers(headers),
 						});
 
 						console.log(`Upload Image response: ${response.status}`);
