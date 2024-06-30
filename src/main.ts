@@ -1,5 +1,6 @@
 import { App, Menu, MenuItem, Plugin, Modal, requestUrl, TFile } from 'obsidian';
 import { DEFAULT_SETTINGS, DiscourseSyncSettings, DiscourseSyncSettingsTab } from './config';
+//import * as crypto from "crypto";
 
 export default class DiscourseSyncPlugin extends Plugin {
 	settings: DiscourseSyncSettings;
@@ -50,25 +51,23 @@ export default class DiscourseSyncPlugin extends Plugin {
 				const file = this.app.vault.getAbstractFileByPath(filePath) as TFile;
 				if (file) {
 					try {
-						const arrayBuffer = await this.app.vault.readBinary(file);
-						const blob = new Blob([arrayBuffer]);
-						const boundary = '----WebKitFormBoundary7MA4YWxkTrZu0gW';
+						const imgfile = await this.app.vault.readBinary(file);
+						const boundary = genBoundary();
+						const sBoundary = '--' + boundary + '\r\n';
 						let body = '';
+						body += `${sBoundary}Content-Disposition: form-data; name="type"\r\n\r\ncomposer\r\n`;
+						body += `${sBoundary}Content-Disposition: form-data; name="synchronous"\r\n\r\ntrue\r\n`;
+						body += `${sBoundary}Content-Disposition: form-data; name="files[]"; filename="${file.name}"\r\nContent-Type: image/jpg`;
+						console.log(body);
 
-						body += `--${boundary}\r\n`;
-						body += `Content-Disposition: form-data; name="type"\r\n\r\n`;
-						body += "composer\r\n";
-						body += `--${boundary}\r\n`;
-						body += `Content-Disposition: form-data; name="synchronous"\r\n\r\n`;
-						body += "true\r\n";
+						const eBoundary = '\r\n--' + boundary + '--\r\n';
+						const bodyArray = new TextEncoder().encode(body);
+						const endBoundaryArray = new TextEncoder().encode(eBoundary);
 
-						body += `--${boundary}\r\n`;
-						body += `Content-Disposition: form-data; name="files[]"; filename="${file.name}"\r\n`;
-						body += `Content-Type: image/jpg\r\n\r\n`
-						body += blob + '\r\n';
-						body += `--${boundary}--\r\n`;
-						console.log(body)
-						const formData = new TextEncoder().encode(body)
+						const formDataArray = new Uint8Array(bodyArray.length + imgfile.byteLength + endBoundaryArray.length);
+						formDataArray.set(bodyArray, 0);
+						formDataArray.set(new Uint8Array(imgfile), bodyArray.length);
+						formDataArray.set(endBoundaryArray, bodyArray.length + imgfile.byteLength);
 
 						const url = `${this.settings.baseUrl}/uploads.json`;
 						const headers = {
@@ -80,19 +79,12 @@ export default class DiscourseSyncPlugin extends Plugin {
 						const response = await requestUrl({
 							url: url,
 							method: "POST",
-							body: formData,
+							body: formDataArray.buffer,
 							throw: false,
 							headers: headers,
 						});
 
-						//const response = await fetch(url, {
-						//	method: "POST",
-						//	body: formData,
-						//	headers: new Headers(headers),
-						//});
-
 						console.log(`Upload Image response: ${response.status}`);
-						//if (response.ok) {
 						if (response.status == 200) {
 							const jsonResponse = response.json();
 							console.log(`Upload Image jsonResponse: ${JSON.stringify(jsonResponse)}`);
@@ -100,7 +92,6 @@ export default class DiscourseSyncPlugin extends Plugin {
 						} else {
 							new NotifyUser(this.app, `Error uploading image: ${response.status}`).open();
 							console.error(`Error uploading image: ${JSON.stringify(response.json)}`);
-							//console.error("Error uploading image:", response.status, await response.text());
 						}
 					} catch (error) {
 						new NotifyUser(this.app, `Exception while uploading image: ${error}`).open();
@@ -185,8 +176,8 @@ export default class DiscourseSyncPlugin extends Plugin {
 
 			const data = await response.json;
 			const categories = data.category_list.categories;
-			const allCategories = categories.flatMap((category: any) => {
-				const subcategories = category.subcategory_list?.map((sub: any) => ({
+			const allCategories = categories.flatMap((category: Category) => {
+				const subcategories: { id: number; name: string }[] = category.subcategory_list?.map((sub: Subcategory) => ({
 					id: sub.id,
 					name: sub.name,
 				})) || [];
@@ -233,6 +224,23 @@ export default class DiscourseSyncPlugin extends Plugin {
 
 }
 
+interface Subcategory {
+	id: number;
+	name: string;
+}
+
+interface Category {
+	id: number;
+	name: string;
+	subcategory_list?: Subcategory[];
+}
+
+const genBoundary = (): string => {
+	return '----WebKitFormBoundary' + Math.random().toString(36).substring(2, 15);
+	//return crypto.randomBytes(16).toString("hex");
+}
+
+
 export class NotifyUser extends Modal {
 	message: string;
 	constructor(app: App, message: string) {
@@ -255,20 +263,6 @@ export class NotifyUser extends Modal {
 		contentEl.empty();
 	}
 
-}
-
-export function buildMultipartFormData(file) {
-	const boundary = '----WebKitFormBoundary7MA4YWxkTrZu0gW';
-	let body = '';
-	body += `--${boundary}\r\n`;
-	body += `Content-Disposition: form-data; name="type";r\n\r\n`;
-	body += `"composer"\r\n`;
-
-	body += `--${boundary}\r\n`;
-	body += `Content-Disposition: form-data; name="file"; filename="${file.name}"\r\n`;
-	body += file.content + '\r\n';
-	body += `--${boundary}--\r\n`;
-	return { body: new TextEncoder().encode(body), boundary };
 }
 
 export class SelectCategoryModal extends Modal {
