@@ -1,5 +1,7 @@
 import { App, Menu, MenuItem, Plugin, Modal, requestUrl, TFile } from 'obsidian';
 import { DEFAULT_SETTINGS, DiscourseSyncSettings, DiscourseSyncSettingsTab } from './config';
+import Axios from "axios";
+//import fs from "fs";
 //import * as crypto from "crypto";
 
 export default class DiscourseSyncPlugin extends Plugin {
@@ -43,6 +45,132 @@ export default class DiscourseSyncPlugin extends Plugin {
 		return matches;
 	}
 
+	// CORS Error
+	async uploadFetchImages(imageReferences: string[]): Promise<string[]> {
+		const imageUrls: string[] = [];
+		for (const ref of imageReferences) {
+			const filePath = this.app.metadataCache.getFirstLinkpathDest(ref, this.activeFile.name)?.path;
+			if (filePath) {
+				const file = this.app.vault.getAbstractFileByPath(filePath) as TFile;
+				if (file) {
+					try {
+						const imgFile = await this.app.vault.readBinary(file);
+						const blob = new Blob([imgFile]);
+
+						const formData = new FormData();
+						formData.append("type", "composer");
+						formData.append("synchronous", "true");
+						formData.append("files[]", blob, file.name);
+
+						const url = `${this.settings.baseUrl}/uploads.json`;
+						const headers = {
+							"Api-Key": this.settings.apiKey,
+							"Api-Username": this.settings.disUser,
+						};
+						try {
+							const response = await fetch(url, {
+								method: "POST",
+								body: formData,
+								headers: headers,
+								mode: 'cors',
+								referrerPolicy: 'no-referrer',
+							});
+							console.log(response.json());
+						} catch (error) {
+							console.log('Fetch error: ' + error);
+						}
+					} catch (error) {
+						console.log('Gather error: ' + error);
+					}
+				}
+			}
+		}
+		return imageUrls;
+	}
+
+
+	// CORS Error
+	async uploadAxiosImages(imageReferences: string[]): Promise<string[]> {
+		const imageUrls: string[] = [];
+		for (const ref of imageReferences) {
+			const filePath = this.app.metadataCache.getFirstLinkpathDest(ref, this.activeFile.name)?.path;
+			if (filePath) {
+				const file = this.app.vault.getAbstractFileByPath(filePath) as TFile;
+				if (file) {
+					try {
+						const imgFile = await this.app.vault.readBinary(file);
+						const blob = new Blob([imgFile]);
+						const url = `${this.settings.baseUrl}/uploads.json`;
+						const form = new FormData();
+						form.append("type", "composer");
+						form.append("synchronous", "true");
+						form.append("files[]", blob, file.name);
+						const headers = {
+							"Api-Key": this.settings.apiKey,
+							"Api-Username": this.settings.disUser,
+							"Content-Type": "multipart/form-data",
+						};
+
+						const response = await Axios.post(url, form, { headers });
+						console.log(JSON.stringify(response.data));
+						imageUrls.push("empty");
+
+						
+
+					} catch (error) {
+						console.error("Error: " + error);
+					}
+				}
+			}
+		}
+		return imageUrls;
+	}
+
+	// URL not found error
+	async uploadExternalImage(imageReferences: string[]): Promise<string[]> {
+		const imageUrls: string[] = [];
+		for (const ref of imageReferences) {
+			const filePath = this.app.metadataCache.getFirstLinkpathDest(ref, this.activeFile.name)?.path;
+			if (filePath) {
+				const file = this.app.vault.getAbstractFileByPath(filePath) as TFile;
+				if (file) {
+					try {
+						const url = `${this.settings.baseUrl}/uploads/generate-presigned-put.json`;
+						//const imgfile = await this.app.vault.readBinary(file);
+						const img = {
+							type: "composer",
+							file_name: file.name,
+							file_size: file.stat.size,
+						}
+						console.log(JSON.stringify(img));
+						const headers = {
+							"Content-Type": "application/json",
+							"Api-Key": this.settings.apiKey,
+							"Api-Username": this.settings.disUser,
+						};
+						const response = await requestUrl({
+							url: url,
+							method: "POST",
+							body: JSON.stringify(img),
+							throw: false,
+							headers: headers
+						})
+						console.log(response.json)
+					} catch (error) {
+						console.error(`Error uploading: ${error}`);
+						//console.log(response.json)
+					}
+				} else {
+					console.error('error')
+				}
+			} else {
+				console.error('error')
+			}
+		}
+		return imageUrls;
+	}
+
+	// Incorrect params error
 	async uploadImages(imageReferences: string[]): Promise<string[]> {
 		const imageUrls = [];
 		for (const ref of imageReferences) {
@@ -57,8 +185,7 @@ export default class DiscourseSyncPlugin extends Plugin {
 						let body = '';
 						body += `${sBoundary}Content-Disposition: form-data; name="type"\r\n\r\ncomposer\r\n`;
 						body += `${sBoundary}Content-Disposition: form-data; name="synchronous"\r\n\r\ntrue\r\n`;
-						body += `${sBoundary}Content-Disposition: form-data; name="files[]"; filename="${file.name}"\r\nContent-Type: image/jpg`;
-						console.log(body);
+						body += `${sBoundary}Content-Disposition: form-data; name="files[]"; filename="${file.name}"\r\nContent-Type: image/jpg\r\n`;
 
 						const eBoundary = '\r\n--' + boundary + '--\r\n';
 						const bodyArray = new TextEncoder().encode(body);
@@ -79,12 +206,11 @@ export default class DiscourseSyncPlugin extends Plugin {
 						const response = await requestUrl({
 							url: url,
 							method: "POST",
-							body: formDataArray.buffer,
+							body: formDataArray,
 							throw: false,
 							headers: headers,
 						});
 
-						console.log(`Upload Image response: ${response.status}`);
 						if (response.status == 200) {
 							const jsonResponse = response.json();
 							console.log(`Upload Image jsonResponse: ${JSON.stringify(jsonResponse)}`);
@@ -118,7 +244,10 @@ export default class DiscourseSyncPlugin extends Plugin {
 		}
 		let content = this.activeFile.content;
 		const imageReferences = this.extractImageReferences(content);
-		const imageUrls = await this.uploadImages(imageReferences);
+		const imageUrls = await this.uploadFetchImages(imageReferences);
+		//const imageUrls = await this.uploadAxiosImages(imageReferences);
+		//const imageUrls = await this.uploadExternalImage(imageReferences);
+		//const imageUrls = await this.uploadImages(imageReferences);
 
 		imageReferences.forEach((ref, index) => {
 			const obsRef = `![[${ref}]]`;
@@ -133,27 +262,24 @@ export default class DiscourseSyncPlugin extends Plugin {
 		});
 		console.log("POST Body:", body);
 
-		const response = await requestUrl({
-			url: url,
-			method: "POST",
-			contentType: "application/json",
-			body,
-			headers,
-		});
+		//const response = await requestUrl({
+		//	url: url,
+		//	method: "POST",
+		//	contentType: "application/json",
+		//	body,
+		//	headers,
+		//});
 
-		if (response.status !== 200) {
-			console.error("Error publishing to Discourse:", response.status);
-			console.error("Response body:", response.text);
-			if (response.status == 422) {
-				new NotifyUser(this.app, `There's an error with this post, could be a duplicate or the title is too short: ${response.status}`).open();
+		//if (response.status !== 200) {
+		//	console.error("Error publishing to Discourse:", response.status);
+		//	console.error("Response body:", response.text);
+		//	if (response.status == 422) {
+		//		new NotifyUser(this.app, `There's an error with this post, could be a duplicate or the title is too short: ${response.status}`).open();
 
-				console.error("there's an error with this post, try making a longer title");
-			}
-			return { message: "Error publishing to Discourse" };
-		}
-
-		//const jsonResponse = response.json;
-		//console.log(`jsonResponse: ${JSON.stringify(jsonResponse, null, 2)}`);
+		//		console.error("there's an error with this post, try making a longer title");
+		//	}
+		//	return { message: "Error publishing to Discourse" };
+		//}
 		return { message: "Success" };
 	}
 
@@ -235,9 +361,14 @@ interface Category {
 	subcategory_list?: Subcategory[];
 }
 
+interface PresignedImage {
+	type: string;
+	file_name: string;
+	file_size: number;
+}
+
 const genBoundary = (): string => {
 	return '----WebKitFormBoundary' + Math.random().toString(36).substring(2, 15);
-	//return crypto.randomBytes(16).toString("hex");
 }
 
 
