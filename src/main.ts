@@ -4,6 +4,7 @@ import { DEFAULT_SETTINGS, DiscourseSyncSettings, DiscourseSyncSettingsTab } fro
 export default class DiscourseSyncPlugin extends Plugin {
 	settings: DiscourseSyncSettings;
 	activeFile: { name: string; content: string };
+
 	async onload() {
 		await this.loadSettings();
 		this.addSettingTab(new DiscourseSyncSettingsTab(this.app, this));
@@ -40,6 +41,114 @@ export default class DiscourseSyncPlugin extends Plugin {
 		}
 		console.log("matches:", matches);
 		return matches;
+	}
+
+	async syncCategories() {
+		for (const category of this.settings.categories_to_sync) {
+			const categoryFolder = category.name;
+			await this.createFolder(categoryFolder);
+			const topics = await this.fetchTopics(category.id);
+
+			for (const topic of topics) {
+				const topicFolder = `${categoryFolder}/${topic.title}`;
+				await this.createFolder(topicFolder);
+				console.log(topic.id);
+				const posts = await this.fetchPosts(topic.id);
+
+				for (const post of posts) {
+					const postFile = `${topicFolder}/${post.id}.md`;
+					const postData = await this.fetchPost(post.id);
+					await this.createFile(postFile, postData.raw);
+				}
+			}
+		}
+	}
+
+	async createFolder(folderPath: string) {
+		if (!await this.app.vault.adapter.exists(folderPath)) {
+			await this.app.vault.createFolder(folderPath);
+		}
+	}
+
+	async createFile(filePath: string, content: string) {
+		if (!await this.app.vault.adapter.exists(filePath)) {
+			await this.app.vault.create(filePath, content);
+		}
+	}
+
+	async fetchCategoryInfo(categoryId: number) {
+		const url = `${this.settings.baseUrl}/c/${categoryId}/show.json`;
+		const headers = {
+			"Content-Type": "application/json",
+			"Api-Key": this.settings.apiKey,
+			"Api-Username": this.settings.disUser,
+		};
+
+		const response = await requestUrl({
+			url: url,
+			method: "GET",
+			contentType: "application/json",
+			headers: headers,
+		});
+		const data = await response.json;
+		return data
+	}
+
+	async fetchTopics(categoryId: number) {
+		const category_info = this.fetchCategoryInfo(categoryId);
+
+		const url = `${this.settings.baseUrl}/c/${category_info.slug}/${categoryId}.json`;
+		const headers = {
+			"Content-Type": "application/json",
+			"Api-Key": this.settings.apiKey,
+			"Api-Username": this.settings.disUser,
+		};
+
+		const response = await requestUrl({
+			url: url,
+			method: "GET",
+			contentType: "application/json",
+			headers: headers,
+		});
+		const data = await response.json;
+		console.log(data);
+		return data.topic_list.topics;
+	}
+
+	async fetchPosts(topicId: number) {
+		const url = `${this.settings.baseUrl}/t/${topicId}.json`;
+		const headers = {
+			"Content-Type": "application/json",
+			"Api-Key": this.settings.apiKey,
+			"Api-Username": this.settings.disUser,
+		};
+
+		const response = await requestUrl({
+			url: url,
+			method: "GET",
+			contentType: "application/json",
+			headers: headers,
+		});
+		const data = await response.json
+		return data.post_stream.posts;
+	}
+
+	async fetchPost(postId: number) {
+		const url = `${this.settings.baseUrl}/posts/${postId}.json`;
+		const headers = {
+			"Content-Type": "application/json",
+			"Api-Key": this.settings.apiKey,
+			"Api-Username": this.settings.disUser,
+		};
+
+		const response = await requestUrl({
+			url: url,
+			method: "GET",
+			contentType: "application/json",
+			headers: headers,
+		});
+		const data = await response.json
+		return data;
 	}
 
 	async uploadImages(imageReferences: string[]): Promise<string[]> {
@@ -155,7 +264,7 @@ export default class DiscourseSyncPlugin extends Plugin {
 		return { message: "Success" };
 	}
 
-	private async fetchCategories() {
+	async fetchCategories() {
 		const url = `${this.settings.baseUrl}/categories.json?include_subcategories=true`;
 		const headers = {
 			"Content-Type": "application/json",
@@ -186,6 +295,7 @@ export default class DiscourseSyncPlugin extends Plugin {
 			});
 			return allCategories;
 		} catch (error) {
+			new NotifyUser(this.app, "There was an error fetching categories. Check the console for more info.").open();
 			console.error("Error fetching categories:", error);
 			return [];
 		}
